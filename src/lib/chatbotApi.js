@@ -1,6 +1,6 @@
 import { syllabusDatabase } from '../data/syllabusDatabase';
 
-export async function askGemini({ prompt, subject, semester, unitName }) {
+export async function askGemini({ prompt, subject, semester, unitName, knowledgeBase, conversation }) {
   const response = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -10,6 +10,8 @@ export async function askGemini({ prompt, subject, semester, unitName }) {
       semester,
       unitName,
       syllabus: syllabusDatabase,
+      knowledgeBase,
+      conversation,
     }),
   });
 

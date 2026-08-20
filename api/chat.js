@@ -9,7 +9,7 @@ export default async function handler(request, response) {
     return response.status(503).json({ error: 'The study assistant is not configured yet. Add GEMINI_API_KEY in Vercel Project Settings.' });
   }
 
-  const { prompt, semester, subject, unitName, syllabus } = request.body || {};
+  const { prompt, semester, subject, unitName, syllabus, knowledgeBase, conversation } = request.body || {};
   if (!prompt || typeof prompt !== 'string' || prompt.trim().length < 2) {
     return response.status(400).json({ error: 'Please enter a study question.' });
   }
@@ -20,14 +20,23 @@ export default async function handler(request, response) {
 Rules:
 - Use the syllabus reference below as your source of truth for semester, subject, unit, and topics.
 - If the student names a semester, subject, and unit, answer that exact request directly. Do not ask them to wait for a teacher or say that notes must be published by a teacher.
-- If the student asks for important notes, give concise exam-ready notes with headings, definitions, key points, and a short example where useful.
-- If the student asks for an answer, explain it step by step at undergraduate level.
+- If the student asks for important notes, give concise exam-ready notes with plain headings such as Meaning, Key points, Example, and Remember.
+- If the student asks for an answer, explain it step by step at undergraduate level in a warm, natural tutor voice.
+- You can also answer general computer science questions such as OOP, API keys, databases, programming, and web development. Connect them to the student's course when useful.
 - If a requested topic is not in the syllabus, say that clearly and offer the closest syllabus topic. Never invent a syllabus topic.
 - Prefer useful answers over follow-up questions. Only ask a clarification when the request cannot be matched at all.
+- Return plain text only. Do not use Markdown, asterisks, hash symbols, slash-star comments, plus signs, hyphen bullets, table pipes, emojis, or decorative separators. Use short headings on their own lines and numbered points such as 1. 2. 3. when a list is needed.
+- Never begin with filler such as Here is, Sure, or Absolutely. Start with the answer.
 - Current dashboard context: semester ${semester || 'unknown'}, subject ${subject?.code || 'unknown'} - ${subject?.title || 'unknown'}, unit ${unitName || 'unknown'}.
 
 Complete syllabus reference:
 ${syllabusText}
+
+Teacher published knowledge and important notes:
+${formatKnowledgeBase(knowledgeBase)}
+
+Recent conversation:
+${formatConversation(conversation)}
 
 Student question:
 ${prompt.trim()}`;
@@ -49,7 +58,7 @@ ${prompt.trim()}`;
       return response.status(502).json({ error: 'Nova could not reach the study model. Please try again shortly.' });
     }
 
-    const answer = data.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('').trim();
+    const answer = cleanAnswer(data.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('').trim());
     if (!answer) return response.status(502).json({ error: 'Nova received an empty answer. Please try again.' });
     return response.status(200).json({ answer });
   } catch (error) {
@@ -68,4 +77,30 @@ function formatSyllabus(syllabus) {
     }).join('\n');
     return `Semester ${semester}:\n${courses}`;
   }).join('\n\n');
+}
+
+function formatKnowledgeBase(knowledgeBase) {
+  if (!knowledgeBase || typeof knowledgeBase !== 'object') return 'No teacher updates have been published yet.';
+
+  const entries = Object.values(knowledgeBase).filter(Boolean).map((entry) => {
+    const notes = Object.entries(entry.topicNotes || {}).map(([topic, note]) => `${topic}: ${note}`).join(' | ');
+    return `${entry.code || 'Subject'} - ${entry.title || ''}; Covered topics: ${(entry.coveredTopics || []).join(', ')}; Teacher notes: ${notes || 'None'}`;
+  });
+  return entries.length ? entries.join('\n') : 'No teacher updates have been published yet.';
+}
+
+function formatConversation(conversation) {
+  if (!Array.isArray(conversation) || conversation.length === 0) return 'This is the first message.';
+  return conversation.slice(-10).map((message) => `${message.role === 'user' ? 'Student' : 'Nova'}: ${cleanAnswer(message.text || '')}`).join('\n');
+}
+
+function cleanAnswer(value) {
+  return String(value || '')
+    .replace(/```[\s\S]*?```/g, (block) => block.replace(/```/g, ''))
+    .replace(/^\s{0,3}#{1,6}\s*/gm, '')
+    .replace(/^\s*[-+*]\s+/gm, '')
+    .replace(/\/\*|\*\//g, '')
+    .replace(/[|*_~`]/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }

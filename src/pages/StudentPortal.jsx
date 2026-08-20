@@ -77,6 +77,8 @@ export default function StudentPortal() {
         subject: activeSub,
         semester,
         unitName,
+        knowledgeBase: state,
+        conversation: assistantMessages,
       });
 
       setAssistantMessages((prev) => [...prev, { id: `${Date.now()}-bot`, role: 'bot', text: answer }]);

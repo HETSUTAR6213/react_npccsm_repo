@@ -1,4 +1,38 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+
+function cleanMessageText(value) {
+  return String(value || '')
+    .replace(/^\s{0,3}#{1,6}\s*/gm, '')
+    .replace(/^\s*[-+*]\s+/gm, '')
+    .replace(/\/\*|\*\//g, '')
+    .replace(/[|*_~`]/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function TypingMessage({ text, onProgress }) {
+  const cleanText = cleanMessageText(text);
+  const [visibleText, setVisibleText] = useState('');
+  const progressRef = useRef(onProgress);
+
+  progressRef.current = onProgress;
+
+  useEffect(() => {
+    let index = 0;
+    setVisibleText('');
+    const timer = window.setInterval(() => {
+      index += Math.max(1, Math.ceil(cleanText.length / 160));
+      setVisibleText(cleanText.slice(0, index));
+      progressRef.current?.();
+      if (index >= cleanText.length) {
+        window.clearInterval(timer);
+      }
+    }, 18);
+    return () => window.clearInterval(timer);
+  }, [cleanText]);
+
+  return <span className="whitespace-pre-line">{visibleText}</span>;
+}
 
 export default function ChatbotWidget({
   open,
@@ -15,6 +49,11 @@ export default function ChatbotWidget({
   onSaveNote,
 }) {
   const [showNotes, setShowNotes] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages, loading, showNotes]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -89,7 +128,9 @@ export default function ChatbotWidget({
                 {message.role !== 'user' && <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-[11px] text-violet-600"><i className="fas fa-sparkles" /></div>}
                 <div className="max-w-[82%]">
                   <div className={`rounded-2xl px-3.5 py-3 text-sm leading-6 shadow-sm ${message.role === 'user' ? 'rounded-br-md bg-violet-600 text-white' : 'rounded-bl-md border border-slate-200 bg-white text-slate-700'}`}>
-                    {message.text}
+                    {message.role === 'user' ? cleanMessageText(message.text) : (
+                      <TypingMessage text={message.text} onProgress={() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })} />
+                    )}
                   </div>
                   {message.role !== 'user' && message.id !== 'welcome' && (
                     <button type="button" onClick={() => onSaveNote(message)} className="mt-1.5 px-1 text-[10px] font-bold text-violet-600 transition hover:text-violet-800">
@@ -125,6 +166,7 @@ export default function ChatbotWidget({
                 </div>
               </div>
             )}
+            <div ref={messagesEndRef} aria-hidden="true" />
           </div>
 
           <div className="border-t border-slate-100 bg-white p-4">
