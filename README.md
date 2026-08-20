@@ -48,6 +48,15 @@ cp .env.example .env        # then fill in your Supabase project URL + anon key
 npm run dev
 ```
 
+### Study assistant setup
+
+The student chatbot calls the Vercel serverless function in `api/chat.js`.
+Add `GEMINI_API_KEY` to Vercel Project Settings → Environment Variables, then
+redeploy. The key must not be added to React/Vite `VITE_*` variables because
+those are exposed in the browser. Optionally set `GEMINI_MODEL` (defaults to
+`gemini-2.5-flash`). Student-saved chatbot notes stay in that student's local
+browser storage and are not submitted by teachers.
+
 ### Supabase setup
 
 1. Create a project at supabase.com.

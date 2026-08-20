@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import Header from '../components/layout/Header';
 import ConnectionBanner from '../components/shared/ConnectionBanner';
+import ChatbotWidget from '../components/shared/ChatbotWidget';
 import { getSubjectsForSemester, getTotalTopics } from '../data/syllabusDatabase';
 import { useSyllabus } from '../context/SyllabusContext';
+import { useAuth } from '../context/AuthContext';
+import { askGemini } from '../lib/chatbotApi';
+
+const STUDENT_NOTES_KEY = 'npccsm_student_notes_v1';
 
 export default function StudentPortal() {
   const [semester, setSemester] = useState(5);
@@ -16,7 +21,33 @@ export default function StudentPortal() {
     },
   ]);
   const [assistantLoading, setAssistantLoading] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [savedNotes, setSavedNotes] = useState([]);
   const { state, loading, usingFallback } = useSyllabus();
+  const { user } = useAuth();
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(`${STUDENT_NOTES_KEY}_${user?.id || 'guest'}`);
+      setSavedNotes(stored ? JSON.parse(stored) : []);
+    } catch (error) {
+      setSavedNotes([]);
+    }
+  }, [user?.id]);
+
+  function handleSaveNote(message) {
+    const note = {
+      id: `${Date.now()}-${message.id}`,
+      text: message.text,
+      semester,
+      subject: activeSub?.title || 'General syllabus',
+      unit: activeSub?.units?.[0]?.name || 'General notes',
+      createdAt: new Date().toISOString(),
+    };
+    const nextNotes = [note, ...savedNotes].slice(0, 50);
+    setSavedNotes(nextNotes);
+    localStorage.setItem(`${STUDENT_NOTES_KEY}_${user?.id || 'guest'}`, JSON.stringify(nextNotes));
+  }
 
   const subjects = useMemo(() => getSubjectsForSemester(semester), [semester]);
   useEffect(() => setSubjectIdx(0), [semester]);
@@ -76,7 +107,7 @@ export default function StudentPortal() {
       <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col space-y-6 p-4 md:p-6 lg:p-8">
         <ConnectionBanner show={usingFallback} />
 
-        <div className="glass-panel rounded-[2rem] border-l-4 border-l-emerald-500 bg-white/85 p-5 md:p-7">
+        <div key={`summary-${semester}-${activeSub?.code || 'empty'}`} className="content-change glass-panel rounded-[2rem] border-l-4 border-l-emerald-500 bg-white/85 p-5 md:p-7">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-emerald-600">Student dashboard</p>
@@ -115,7 +146,7 @@ export default function StudentPortal() {
                     key={sub.code}
                     onClick={() => setSubjectIdx(idx)}
                     type="button"
-                    className={`shrink-0 rounded-2xl border px-3 py-2.5 text-left transition-all ${
+                    className={`shrink-0 rounded-2xl border px-3 py-2.5 text-left transition-all duration-300 hover:-translate-y-0.5 ${
                       isActive
                         ? 'border-emerald-200 bg-emerald-50 text-emerald-700 shadow-md shadow-emerald-100'
                         : 'border-slate-200 bg-white text-slate-600 hover:border-emerald-100 hover:bg-slate-50'
@@ -137,7 +168,7 @@ export default function StudentPortal() {
           </div>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-12">
+        <div key={`courses-${semester}-${activeSub?.code || 'empty'}`} className="content-change grid gap-6 lg:grid-cols-12">
           <div className="lg:col-span-7">
             <div className="glass-panel rounded-[1.75rem] border border-slate-200/80 bg-white/80 p-5 md:p-6">
               <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-4">
@@ -188,104 +219,21 @@ export default function StudentPortal() {
           </div>
         </div>
 
-        <div className="glass-panel rounded-[1.75rem] border border-slate-200/80 bg-white/80 p-5 md:p-6">
-          <div className="mb-5 flex items-center justify-between gap-3 border-b border-slate-100 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-50 text-violet-600">
-                <i className="fas fa-robot" />
-              </div>
-              <div>
-                <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-violet-600">Study assistant</p>
-                <h3 className="text-lg font-black text-slate-800">Gemini 2.5 Flash tutor</h3>
-              </div>
-            </div>
-            <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-violet-700">
-              {semester}th semester
-            </span>
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-            <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/60 p-4">
-              <div className="mb-3 flex flex-wrap gap-2">
-                {[
-                  'Give me the important questions of this semester, this subject, and this unit.',
-                  'Give me the summary and main points of this topic.',
-                  'Give me the answer for this topic.',
-                ].map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    onClick={() => setAssistantPrompt(suggestion)}
-                    className="rounded-full border border-violet-200 bg-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-violet-700 transition hover:bg-violet-50"
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-
-              <div className="max-h-[300px] space-y-3 overflow-y-auto rounded-[1.25rem] border border-slate-200 bg-white p-3 custom-scrollbar">
-                {assistantMessages.map((msg) => (
-                  <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div
-                      className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-6 ${
-                        msg.role === 'user'
-                          ? 'bg-violet-600 text-white'
-                          : 'border border-slate-200 bg-slate-50 text-slate-700'
-                      }`}
-                    >
-                      {msg.text}
-                    </div>
-                  </div>
-                ))}
-                {assistantLoading && (
-                  <div className="flex justify-start">
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">Thinking…</div>
-                  </div>
-                )}
-              </div>
-
-              <form onSubmit={handleStudyAssistantSubmit} className="mt-4 flex gap-3">
-                <input
-                  type="text"
-                  value={assistantPrompt}
-                  onChange={(e) => setAssistantPrompt(e.target.value)}
-                  placeholder="Ask about important questions, answers, or summaries…"
-                  className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-violet-300"
-                />
-                <button
-                  type="submit"
-                  disabled={assistantLoading}
-                  className="rounded-2xl bg-violet-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:bg-violet-300"
-                >
-                  {assistantLoading ? 'Loading…' : 'Ask'}
-                </button>
-              </form>
-            </div>
-
-            <div className="rounded-[1.5rem] border border-violet-100 bg-violet-50/60 p-4">
-              <h4 className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-violet-700">Course context</h4>
-              <div className="mt-3 space-y-3">
-                <div className="rounded-2xl bg-white p-3">
-                  <div className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-slate-500">Subject</div>
-                  <div className="mt-1 font-bold text-slate-800">{activeSub ? `${activeSub.code} • ${activeSub.title}` : 'No subject selected'}</div>
-                </div>
-                <div className="rounded-2xl bg-white p-3">
-                  <div className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-slate-500">Current unit</div>
-                  <div className="mt-1 font-bold text-slate-800">{activeSub?.units?.[0]?.name || 'Select a topic area'}</div>
-                </div>
-                <div className="rounded-2xl bg-white p-3">
-                  <div className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-slate-500">Best prompts</div>
-                  <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-slate-600">
-                    <li>Important questions</li>
-                    <li>Main points and summary</li>
-                    <li>Exam-style answers</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
       </main>
+      <ChatbotWidget
+        open={chatOpen}
+        onOpen={() => setChatOpen(true)}
+        onClose={() => setChatOpen(false)}
+        messages={assistantMessages}
+        prompt={assistantPrompt}
+        onPromptChange={setAssistantPrompt}
+        onSubmit={handleStudyAssistantSubmit}
+        loading={assistantLoading}
+        subject={activeSub}
+        semester={semester}
+        savedNotes={savedNotes}
+        onSaveNote={handleSaveNote}
+      />
     </div>
   );
 }
