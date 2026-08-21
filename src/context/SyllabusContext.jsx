@@ -1,5 +1,5 @@
 ﻿import { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { supabase, isSupabaseConfigured, REST_ENDPOINT } from '../lib/supabaseClient';
+import { supabase, isSupabaseConfigured, REST_ENDPOINT, supabaseKey } from '../lib/supabaseClient';
 
 const LOCAL_STORAGE_KEY = 'npccsm_academic_state_v3';
 const SyllabusContext = createContext(null);
@@ -174,8 +174,8 @@ export function SyllabusProvider({ children }) {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              apikey: restApiKey,
-              Authorization: `Bearer ${restApiKey}`,
+              apikey: supabaseKey,
+              Authorization: `Bearer ${supabaseKey}`,
               Prefer: 'return=minimal',
             },
             body: JSON.stringify({
